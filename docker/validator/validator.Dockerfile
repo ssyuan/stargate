@@ -19,7 +19,7 @@ RUN rustup install $(cat rust-toolchain)
 FROM toolchain AS builder
 
 COPY . /starcoin
-RUN cargo build  -p sgchain && cd target/release && rm -r build deps incremental
+RUN cargo build  -p sgchain && cd target/debug && rm -r build deps incremental
 
 ### Production Image ###
 FROM debian:buster AS prod
