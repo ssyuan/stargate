@@ -1,0 +1,26 @@
+name: docker_build
+on:
+  push:
+    branches:
+      - master
+      - cluster_deploy
+    paths-ignore:
+      - '**.md'
+jobs:
+  docker_build:
+    name: docker_build
+    runs-on: ${{matrix.os}}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v1
+        with:
+          submodules: recursive
+      - name: Publish to Registry
+        uses: elgohr/Publish-Docker-Github-Action@master
+        with:
+          name: starcoin/sgchain
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          dockerfile: docker/validator/validator.Dockerfile
