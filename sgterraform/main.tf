@@ -29,6 +29,12 @@ data "alicloud_instance_types" "c2g8" {
   instance_charge_type = "PostPaid"
 }
 
+data "alicloud_images" "images_docker" {
+  owners     = "self"
+  name_regex = "^starcoin_docker"
+  most_recent = true
+}
+
 data "alicloud_images" "default" {
   name_regex = "^ubuntu"
   most_recent = true

@@ -41,8 +41,8 @@ grpc_max_receive_len = 100000000
 
 [[networks]]
 peer_id = "ab0d6a54ce9d7fc79c061f95883a308f9bdfc987262b6a34a360fdd788fcd9cd"
-listen_address = "/ip6/::1/tcp/60754"
-advertised_address = "/ip6/::1/tcp/60754"
+listen_address = "/ip4/{CHAIN_IP}/tcp/60750"
+advertised_address = "/ip4/{CHAIN_IP}/tcp/60750"
 discovery_interval_ms = 1000
 connectivity_check_interval_ms = 5000
 enable_encryption_and_authentication = false

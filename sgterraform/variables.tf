@@ -42,6 +42,9 @@ variable "exec_file_path" {
   default     = "../target/debug/sgchain"
 }
 
+variable "docker_image" {
+  default = "starcoin/sgchain:cluster_deploy"
+}
 variable "validator_node_sources_ipv4" {
   type        = list(string)
   description = "List of IPv4 CIDR blocks from which to allow Validator Node access"

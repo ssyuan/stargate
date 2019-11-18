@@ -1,2 +1,2 @@
 [seed_peers]
-1e5d5a74b0fd09f601ac0fca2fe7d213704e02e51943d18cf25a546b8416e9e1 = ["/ip6/::1/tcp/60750"]
+1e5d5a74b0fd09f601ac0fca2fe7d213704e02e51943d18cf25a546b8416e9e1 = ["/ip4/{SEED_IP}/tcp/60750"]
