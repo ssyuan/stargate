@@ -26,7 +26,7 @@ FROM debian:buster AS prod
 
 RUN mkdir -p /opt/starcoin/bin /opt/starcoin/etc
 COPY libra/docker/install-tools.sh /root
-COPY --from=builder /starcoin/target/release/sgchain /opt/starcoin/bin
+COPY --from=builder /starcoin/target/debug/sgchain /opt/starcoin/bin
 
 # Admission control
 EXPOSE 8000
