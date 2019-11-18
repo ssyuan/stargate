@@ -4,7 +4,7 @@ FROM debian:buster AS toolchain
 # docker build --build-arg https_proxy=http://fwdproxy:8080 --build-arg http_proxy=http://fwdproxy:8080
 
 RUN echo "deb http://deb.debian.org/debian buster-backports main" >> /etc/apt/sources.list.d/backports.list \
-    && apt-get update && apt-get install -y protobuf-compiler cmake curl clang \
+    && apt-get update && apt-get install -y protobuf-compiler cmake curl clang git \
     && apt-get clean && rm -r /var/lib/apt/lists/*
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
@@ -19,7 +19,7 @@ RUN rustup install $(cat rust-toolchain)
 FROM toolchain AS builder
 
 COPY . /starcoin
-RUN cargo build --release -p sgchain && cd target/release && rm -r build deps incremental
+RUN cargo build  -p sgchain && cd target/release && rm -r build deps incremental
 
 ### Production Image ###
 FROM debian:buster AS prod
