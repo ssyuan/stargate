@@ -9,8 +9,6 @@ use libra_crypto::hash::{
 use libra_logger::prelude::*;
 use libra_types::account_address::AccountAddress;
 use libra_types::account_state_blob::AccountStateBlob;
-use libra_types::crypto_proxies::LedgerInfoWithSignatures;
-use libra_types::ledger_info::LedgerInfo;
 use libra_types::proof::accumulator::InMemoryAccumulator;
 use libra_types::proof::SparseMerkleProof;
 use libra_types::transaction::Version;
@@ -23,6 +21,7 @@ use sgtypes::channel_transaction_to_commit::{
     ChannelTransactionToApply, ChannelTransactionToCommit,
 };
 use sgtypes::hash::*;
+use sgtypes::ledger_info::LedgerInfo;
 use sgtypes::write_set_item::WriteSetItem;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::{TryFrom, TryInto};
@@ -85,30 +84,24 @@ impl TxApplier {
             .get_startup_info()
             .expect("Fail to read startup info from storage");
 
-        let (
-            state_root_hash,
-            frozen_subtrees_in_accumulator,
-            num_leaves_in_accumulator,
-            epoch,
-            _committed_timestamp_usecs,
-        ) = match startup_info {
-            Some(info) => {
-                info!("Startup info read from DB: {:?}.", info);
-                let ledger_info = info.ledger_info;
+        let (state_root_hash, frozen_subtrees_in_accumulator, num_leaves_in_accumulator, epoch) =
+            match startup_info {
+                Some(info) => {
+                    info!("Startup info read from DB: {:?}.", info);
+                    let ledger_info = info.ledger_info;
 
-                (
-                    info.account_state_root_hash,
-                    info.ledger_frozen_subtree_hashes,
-                    info.latest_version + 1,
-                    ledger_info.epoch(),
-                    ledger_info.timestamp_usecs(),
-                )
-            }
-            None => {
-                info!("Startup info is empty. Will start from GENESIS.");
-                (*SPARSE_MERKLE_PLACEHOLDER_HASH, vec![], 0, 0, 0)
-            }
-        };
+                    (
+                        info.account_state_root_hash,
+                        info.ledger_frozen_subtree_hashes,
+                        info.latest_version + 1,
+                        ledger_info.epoch(),
+                    )
+                }
+                None => {
+                    info!("Startup info is empty. Will start from GENESIS.");
+                    (*SPARSE_MERKLE_PLACEHOLDER_HASH, vec![], 0, 0)
+                }
+            };
         let applied_trees = AppliedTrees {
             epoch,
             state_tree: SparseMerkleTree::new(state_root_hash),
@@ -133,16 +126,19 @@ impl TxApplier {
         let ChannelTransactionToApply {
             signed_channel_txn,
             write_set,
+            travel: _,
             events,
             major_status,
-            travel,
+            gas_used,
+            ..
         } = tx_to_apply;
         let channel_seq_number = signed_channel_txn.raw_tx.channel_sequence_number();
         ensure!(
             channel_seq_number == self.applied_trees.tx_accumulator.num_leaves(),
             "tx channel seq number mismatched"
         );
-        let witness_states = self.process_write_set(&write_set, travel)?;
+
+        let witness_states = self.process_write_set(write_set.as_ref())?;
 
         let new_state_tree = Self::build_state_tree(
             &witness_states,
@@ -151,6 +147,12 @@ impl TxApplier {
         )?;
         let _event_tree = InMemoryAccumulator::<EventAccumulatorHasher>::default()
             .append(events.iter().map(CryptoHash::hash).collect_vec().as_slice());
+
+        let (travel, write_set) = match write_set {
+            None => (true, WriteSet::default()),
+            Some(ws) => (false, ws),
+        };
+
         let write_set_tree = InMemoryAccumulator::<WriteSetAccumulatorHasher>::default().append(
             write_set
                 .iter()
@@ -164,6 +166,8 @@ impl TxApplier {
             new_state_tree.root_hash(),
             HashValue::default(), // TODO: event_tree.root_hash(),
             major_status,
+            travel,
+            gas_used,
         );
 
         let new_txn_accumulator = self
@@ -181,40 +185,22 @@ impl TxApplier {
         let ledger_info = LedgerInfo::new(
             channel_seq_number,
             new_txn_accumulator.root_hash(),
-            HashValue::zero(),
-            HashValue::zero(),
             new_epoch,
             get_current_timestamp().as_micros() as u64,
-            None,
         );
-
-        let mut ledger_sig = BTreeMap::new();
-        ledger_sig.insert(
-            signed_channel_txn.raw_tx.sender(),
-            signed_channel_txn
-                .sender_signature
-                .write_set_payload_signature
-                .clone(),
-        );
-        ledger_sig.insert(
-            signed_channel_txn.raw_tx.receiver(),
-            signed_channel_txn
-                .receiver_signature
-                .write_set_payload_signature
-                .clone(),
-        );
-        let ledger_info_with_sigs = Some(LedgerInfoWithSignatures::new(ledger_info, ledger_sig));
 
         let txn_to_commit = ChannelTransactionToCommit::new(
             signed_channel_txn,
             write_set,
+            travel,
             witness_states,
             events,
             major_status,
+            gas_used,
         );
 
         self.store
-            .save_tx(txn_to_commit, channel_seq_number, &ledger_info_with_sigs)?;
+            .save_tx(txn_to_commit, channel_seq_number, &Some(ledger_info), true)?;
 
         self.applied_trees = AppliedTrees {
             epoch: new_epoch,
@@ -304,37 +290,35 @@ impl TxApplier {
 
     fn process_write_set(
         &self,
-        write_set: &WriteSet,
-        travel: bool,
+        write_set: Option<&WriteSet>,
     ) -> Result<BTreeMap<AccountAddress, AccountStateBlob>> {
-        // if write_set is empty, it means the upper channel tx is travel
-        if travel {
-            ensure!(
-                write_set.is_empty(),
-                "write set should be empty if channel tx is travel"
-            );
-            let mut state = BTreeMap::new();
-            let empty_state_blob = AccountStateBlob::try_from(&BTreeMap::new())?;
-            state.insert(self.owner_address(), empty_state_blob.clone());
-            state.insert(self.participant_address(), empty_state_blob);
-            Ok(state)
-        } else {
-            ensure!(
-                !write_set.is_empty(),
-                "write set should not be empty if channel tx is offchain"
-            );
-            let state: BTreeMap<AccountAddress, BTreeMap<Vec<u8>, Vec<u8>>> =
-                write_set.try_into()?;
-            let mut blob_state = BTreeMap::new();
-            for (addr, state_btree) in state.into_iter() {
-                blob_state.insert(addr, AccountStateBlob::try_from(&state_btree)?);
+        // if write_set is none, it means the upper channel tx is travel
+        match write_set {
+            None => {
+                let mut state = BTreeMap::new();
+                let empty_state_blob = AccountStateBlob::try_from(&BTreeMap::new())?;
+                state.insert(self.owner_address(), empty_state_blob.clone());
+                state.insert(self.participant_address(), empty_state_blob);
+                Ok(state)
             }
-            check_witness_state(
-                self.owner_address(),
-                self.participant_address(),
-                &blob_state,
-            )?;
-            Ok(blob_state)
+            Some(write_set) => {
+                ensure!(
+                    !write_set.is_empty(),
+                    "write set should not be empty if channel tx is offchain"
+                );
+                let state: BTreeMap<AccountAddress, BTreeMap<Vec<u8>, Vec<u8>>> =
+                    write_set.try_into()?;
+                let mut blob_state = BTreeMap::new();
+                for (addr, state_btree) in state.into_iter() {
+                    blob_state.insert(addr, AccountStateBlob::try_from(&state_btree)?);
+                }
+                check_witness_state(
+                    self.owner_address(),
+                    self.participant_address(),
+                    &blob_state,
+                )?;
+                Ok(blob_state)
+            }
         }
     }
 }

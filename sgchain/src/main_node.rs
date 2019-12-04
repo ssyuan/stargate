@@ -1,11 +1,9 @@
 use executable_helpers::helpers::setup_executable;
+use libra_config::config::NodeConfig;
 use libra_logger::prelude::*;
+use libra_node::main_node::LibraHandle;
 use slog_scope::GlobalLoggerGuard;
 use std::path::Path;
-
-use libra_config::config::NodeConfig;
-use libra_node::main_node::LibraHandle;
-
 pub fn run_node(
     config: Option<&Path>,
     no_logging: bool,

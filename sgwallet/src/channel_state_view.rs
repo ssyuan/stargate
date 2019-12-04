@@ -2,32 +2,41 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use failure::prelude::*;
-use libra_types::{access_path::AccessPath, transaction::Version};
-
-use crate::channel::Channel;
 use libra_state_view::StateView;
+use libra_types::write_set::WriteSet;
+use libra_types::{access_path::AccessPath, transaction::Version};
 use sgchain::client_state_view::ClientStateView;
 use sgchain::star_chain_client::ChainClient;
 
+use libra_types::account_address::AccountAddress;
+use sgtypes::channel::ChannelState;
+
 pub struct ChannelStateView<'txn> {
-    channel: &'txn Channel,
+    channel_state: &'txn ChannelState,
+    latest_write_set: WriteSet,
     client_state_view: ClientStateView<'txn>,
 }
 
 impl<'txn> ChannelStateView<'txn> {
     pub fn new(
-        channel: &'txn Channel,
+        account_address: AccountAddress,
+        channel_state: &'txn ChannelState,
+        latest_write_set: WriteSet,
         version: Option<Version>,
         client: &'txn dyn ChainClient,
     ) -> Result<Self> {
-        let account_state = client.get_account_state(channel.account().address(), version)?;
-        let client_state_view = ClientStateView::new_with_account_state(
-            channel.account().address(),
-            account_state,
-            client,
-        );
+        // TODO: make it async
+        let client_state_view = match version {
+            None => {
+                let account_state = client.get_account_state(account_address, version)?;
+                ClientStateView::new_with_account_state(account_address, account_state, client)
+            }
+            Some(v) => ClientStateView::new(Some(v), client),
+        };
+
         Ok(Self {
-            channel,
+            channel_state,
+            latest_write_set,
             client_state_view,
         })
     }
@@ -37,12 +46,16 @@ impl<'txn> ChannelStateView<'txn> {
             .version()
             .expect("client_state_view in ChannelStateView must lock version.")
     }
+
+    pub fn get_local(&self, access_path: &AccessPath) -> Result<Option<Vec<u8>>> {
+        super::channel::access_local(&self.latest_write_set, self.channel_state, access_path)
+    }
 }
 
 impl<'txn> StateView for ChannelStateView<'txn> {
     fn get(&self, access_path: &AccessPath) -> Result<Option<Vec<u8>>> {
         if access_path.is_channel_resource() {
-            Ok(self.channel.get(access_path))
+            self.get_local(access_path)
         } else {
             self.client_state_view.get(access_path)
         }

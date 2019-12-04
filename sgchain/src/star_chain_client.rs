@@ -10,13 +10,18 @@ use async_trait::async_trait;
 use core::borrow::Borrow;
 use failure::prelude::*;
 use futures::channel::oneshot::Sender;
+use futures_timer::Delay;
 use grpcio::{ChannelBuilder, EnvBuilder};
 use libra_config::config::NodeConfig;
 use libra_config::config::NodeConfigHelpers;
 use libra_config::trusted_peers::ConfigHelpers;
 use libra_logger::prelude::*;
 use libra_prost_ext::MessageExt;
+use libra_types::access_path::AccessPath;
+use libra_types::contract_event::EventWithProof;
+use libra_types::crypto_proxies::LedgerInfoWithSignatures;
 use libra_types::get_with_proof::ResponseItem;
+use libra_types::ledger_info::LedgerInfo;
 use libra_types::{
     account_address::AccountAddress,
     account_config::{association_address, AccountResource},
@@ -36,7 +41,6 @@ use std::{
 };
 use tokio::runtime::Runtime;
 use tokio::runtime::TaskExecutor;
-use tokio::timer::delay;
 use transaction_builder::{encode_create_account_script, encode_transfer_script};
 use vm_genesis::{encode_genesis_transaction_with_validator, GENESIS_KEYPAIR};
 
@@ -57,16 +61,23 @@ pub trait ChainClient: Send + Sync {
         account: AccountAddress,
         version: Option<Version>,
     ) -> Result<AccountState> {
-        let (version, state_blob, proof) = self
-            .get_account_state_with_proof(&account, version)
+        match self.get_account_state_option(account, version)? {
+            Some(s) => Ok(s),
+            None => bail!("can not find account by address:{}", account),
+        }
+    }
+
+    fn get_account_state_option(
+        &self,
+        account: AccountAddress,
+        version: Option<Version>,
+    ) -> Result<Option<AccountState>> {
+        self.get_account_state_with_proof(&account, version)
             .and_then(|(version, state, proof)| {
-                Ok((
-                    version,
-                    state.ok_or(format_err!("can not find account by address:{}", account))?,
-                    proof,
-                ))
-            })?;
-        AccountState::from_account_state_blob(version, state_blob, proof)
+                state
+                    .map(|s| AccountState::from_account_state_blob(version, s, proof))
+                    .transpose()
+            })
     }
 
     fn get_account_state_with_proof(
@@ -119,10 +130,10 @@ pub trait ChainClient: Send + Sync {
         address: &AccountAddress,
         seq: u64,
     ) -> Result<(Option<TransactionWithProof>, Option<AccountStateWithProof>)> {
-        let end_time = Instant::now() + Duration::from_millis(10_000);
+        let end_time = Instant::now() + Duration::from_millis(50_000);
         loop {
             let timeout_time = Instant::now() + Duration::from_millis(1000);
-            delay(timeout_time).await;
+            Delay::new(Duration::from_millis(1000)).await;
             debug!("watch address : {:?}, seq number : {}", address, seq);
             let (tx_proof, account_proof) = self.get_transaction_by_seq_num(address, seq)?;
             let flag = timeout_time >= end_time;
@@ -179,6 +190,15 @@ pub trait ChainClient: Send + Sync {
         ))
     }
 
+    fn get_latest_ledger(&self, account_address: &AccountAddress) -> LedgerInfo {
+        let req = RequestItem::GetAccountState {
+            address: account_address.clone(),
+        };
+        let resp = self.do_request(&build_request(req, None));
+        let a: LedgerInfoWithSignatures = resp.ledger_info_with_sigs.unwrap().try_into().unwrap();
+        a.ledger_info().clone()
+    }
+
     fn account_exist(&self, account_address: &AccountAddress, version: Option<Version>) -> bool {
         match self
             .get_account_state_with_proof_inner(account_address, version)
@@ -205,6 +225,23 @@ pub trait ChainClient: Send + Sync {
             }
             None => None,
         }
+    }
+
+    fn get_events(
+        &self,
+        access_path: AccessPath,
+        start_event_seq_num: u64,
+        ascending: bool,
+        limit: u64,
+    ) -> Result<(Vec<EventWithProof>, AccountStateWithProof)> {
+        let req = RequestItem::GetEventsByEventAccessPath {
+            access_path,
+            start_event_seq_num,
+            ascending,
+            limit,
+        };
+        let resp = parse_response(self.do_request(&build_request(req, None)));
+        resp.into_get_events_by_access_path_response()
     }
 }
 
@@ -246,6 +283,7 @@ pub struct MockChainClient {
     ac_client: Arc<AdmissionControlMockClient>,
     // just wait client to be drop.
     _shutdown_sender: Arc<Sender<()>>,
+    rt: Arc<tokio::runtime::Runtime>,
 }
 
 impl MockChainClient {
@@ -257,11 +295,15 @@ impl MockChainClient {
         info!("MockChainClient config: {:?} ", config);
         genesis_blob(&config);
 
-        let (_handle, shutdown_sender, ac) = setup_environment(&mut config);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let executor = rt.executor();
+
+        let (_handle, shutdown_sender, ac, proxy) = setup_environment(&mut config);
         (
             MockChainClient {
-                ac_client: Arc::new(AdmissionControlMockClient::new(ac)),
+                ac_client: Arc::new(AdmissionControlMockClient::new(ac, proxy, executor)),
                 _shutdown_sender: Arc::new(shutdown_sender),
+                rt: Arc::new(rt),
             },
             _handle,
         )
