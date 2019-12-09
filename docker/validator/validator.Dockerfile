@@ -45,7 +45,7 @@ CMD cd /opt/starcoin/etc \
     && echo "$NETWORK_KEYPAIRS" > network_keypairs.config.toml \
     && echo "$NETWORK_PEERS" > network_peers.config.toml \
     && echo "$CONSENSUS_KEYPAIR" > consensus_keypair.config.toml \
-    && echo "CONSENSUS_PEERS" > consensus_peers.config.toml \
+    && echo "$CONSENSUS_PEERS" > consensus_peers.config.toml \
     && echo "$FULLNODE_KEYPAIRS" > fullnode_keypairs.config.toml \
     && exec /opt/starcoin/bin/sgchain -f node.config.toml
 
