@@ -68,12 +68,17 @@ resource "null_resource" "install" {
       #command
       "mkdir -p /opt/starcoin",
       "cd /opt/starcoin",
-      #"scp -i ${var.ssh_key_pair_file}  ${alicloud_instance.compile.private_ip}:/starcoin/stargate/target/release/sgchain .",
-      #"chmod +x sgchain",
       "tar xzvf ../config.tar.gz",
-      "docker network create --subnet 172.16.0.0/24 testnet || true",
-      "docker run  -v `pwd`:`pwd` -w `pwd` -e NODE_CONFIG=$(sed 's,{CHAIN_IP},${alicloud_instance.sgchain.*.private_ip[count.index]},' ${count.index}/node.config.toml) -e SEED_PEERS=$(sed 's,{SEED_IP},${alicloud_instance.sgchain.*.private_ip[0]},' */*.seed_peers.config.toml)  --ip ${alicloud_instance.sgchain.*.private_ip[count.index]} --expose 60750  --network testnet --detach ${var.docker_image}"
-      #"./sgchain -f ${count.index}/node.config.toml",
+      ##"docker login -u ${var.docker_hub_user_name} -p ${var.docker_hub_user_password}",
+      ##"docker network create --subnet 172.16.0.0/24 testnet || true",
+      "export NODE_CONFIG=$(sed 's,{CHAIN_IP},${alicloud_instance.sgchain.*.private_ip[count.index]}', ${count.index}/node.config.toml)",
+      "export SEED_PEERS=$(sed 's,{SEED_IP},${alicloud_instance.sgchain.*.private_ip[0]}', ${count.index}/*.seed_peers.config.toml)",
+      "export NETWORK_KEYPAIRS=$(cat ${count.index}/*.node.network.keys.toml)",
+      "export NETWORK_PEERS=$(cat ${count.index}/*.network_peers.config.toml)",
+      "export CONSENSUS_KEYPAIR=$(cat ${count.index}/*.node.consensus.keys.toml)",
+      "export CONSENSUS_PEERS=$(cat ${count.index}/consensus_peers.config.toml)",
+      "export FULLNODE_KEYPAIRS=$(cat ${count.index}/fullnode.keys.toml)",
+      "docker run  -v `pwd`:`pwd` -w `pwd` --env NODE_CONFIG --env SEED_PEERS --env NETWORK_KEYPAIRS --env NETWORK_PEERS --env CONSENSUS_KEYPAIR --env CONSENSUS_PEERS --env FULLNODE_KEYPAIRS  --ip ${alicloud_instance.sgchain.*.private_ip[count.index]} --expose 60750  --network testnet --detach ${var.docker_image}"
     ]
   }
 }

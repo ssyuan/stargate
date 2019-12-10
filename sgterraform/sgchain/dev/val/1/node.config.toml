@@ -1,5 +1,5 @@
 [base]
-data_dir_path = "/Users/suoyuan/work/project/rust/starcoin_stargate/sgterraform/sgchain/dev/val/1"
+data_dir_path = "/opt/starcoin"
 node_sync_retries = 7
 node_sync_channel_buffer_size = 10
 node_async_log_chan_size = 256
@@ -59,7 +59,7 @@ proposer_type = "multiple_ordered_proposers"
 contiguous_rounds = 2
 consensus_keypair_file = "8deeeaed65f0cd7484a9e4e5ac51fbac548f2f71299a05e000156031ca78fb9f.node.consensus.keys.toml"
 consensus_peers_file = "consensus_peers.config.toml"
-consensus_type = "pow"
+consensus_type = "p_o_w"
 
 [mempool]
 broadcast_transactions = true
