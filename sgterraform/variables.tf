@@ -12,12 +12,10 @@ variable "node_number" {
 variable "access_key" {
   type = string
   description = "deploy access_key"
-  default = "LTAI4FecNkcNFZrFAzMMTAoF"
 }
 variable "secret_key" {
   type = string
   description = "deploy secret_key"
-  default = "KBfHeXy14GbSVmGXMtxt5PqTDHdJ0t"
 }
 
 variable "ssh_key_pair_file" {
