@@ -12,10 +12,10 @@ RUN rustup install $(cat rust-toolchain)
 FROM toolchain AS builder
 
 COPY . /starcoin
+RUN ls -la
 RUN cargo build  -p sgchain && cd target/debug && rm -r build deps incremental
 
 RUN mkdir -p /opt/starcoin/bin /opt/starcoin/etc
-COPY libra/docker/install-tools.sh /root
 COPY --from=builder /starcoin/target/debug/sgchain /opt/starcoin/bin
 
 # Admission control
