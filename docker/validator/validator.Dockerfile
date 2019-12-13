@@ -1,4 +1,4 @@
-FROM rust:latest AS toolchain
+FROM starcoin/base:latest AS toolchain
 
 # To use http/https proxy while building, use:
 # docker build --build-arg https_proxy=http://fwdproxy:8080 --build-arg http_proxy=http://fwdproxy:8080
@@ -14,9 +14,6 @@ FROM toolchain AS builder
 COPY . /starcoin
 RUN cargo build  -p sgchain && cd target/debug && rm -r build deps incremental
 
-### Production Image ###
-FROM debian:buster AS prod
-
 RUN mkdir -p /opt/starcoin/bin /opt/starcoin/etc
 COPY libra/docker/install-tools.sh /root
 COPY --from=builder /starcoin/target/debug/sgchain /opt/starcoin/bin
@@ -27,9 +24,6 @@ EXPOSE 8000
 EXPOSE 6180
 # Metrics
 EXPOSE 9101
-
-# Capture backtrace on error
-ENV RUST_BACKTRACE 1
 
 # Define SEED_PEERS, NODE_CONFIG, NETWORK_KEYPAIRS, CONSENSUS_KEYPAIR, GENESIS_BLOB and PEER_ID environment variables when running
 COPY docker/validator/docker-run.sh /
