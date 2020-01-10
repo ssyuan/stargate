@@ -21,9 +21,7 @@ members = [
     "router",
     "router/graphdb",
     "router/ant",
+    "router/stats"
 ]
 
 exclude = ["libra"]
-
-[replace]
-"libp2p:0.7.0" = { git = "https://github.com/fikgol/rust-libp2p", tag = "v0.7.0-stargate" }

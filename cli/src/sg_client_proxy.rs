@@ -4,8 +4,15 @@ use crate::commands::*;
 use anyhow::{ensure, format_err, Error, Result};
 use grpcio::EnvBuilder;
 use libra_crypto::HashValue;
+use libra_types::explorer::GetBlockByBlockIdResponse;
+use libra_types::transaction::Transaction;
 use libra_types::{
     account_address::{AccountAddress, ADDRESS_LENGTH},
+    explorer::{
+        BlockId, BlockRequestItem, BlockResponseItem, GetBlockSummaryListRequest,
+        GetBlockSummaryListResponse, GetTransactionListRequest, GetTransactionListResponse,
+        TxnRequestItem, TxnResponseItem, Version as TxnVersion,
+    },
     proof::SparseMerkleProof,
     transaction::{parse_as_transaction_argument, Version},
 };
@@ -19,6 +26,7 @@ use node_proto::{
     InstallChannelScriptPackageRequest, OpenChannelRequest, OpenChannelResponse, PayRequest,
     PayResponse, PaymentRequest, WithdrawRequest, WithdrawResponse,
 };
+use sgchain::star_chain_client::ChainExplorer;
 use sgchain::{
     client_state_view::ClientStateView,
     star_chain_client::{faucet_sync, ChainClient, StarChainClient},
@@ -73,13 +81,13 @@ impl SGClientProxy {
         _is_blocking: bool,
     ) -> Result<OpenChannelResponse> {
         ensure!(
-            space_delim_strings.len() == 4,
+            space_delim_strings.len() == 3,
             "Invalid number of arguments for open channel"
         );
         let response = self.node_client.open_channel(OpenChannelRequest {
             remote_addr: AccountAddress::from_hex_literal(space_delim_strings[1])?,
             local_amount: space_delim_strings[2].parse::<u64>()?,
-            remote_amount: space_delim_strings[3].parse::<u64>()?,
+            remote_amount: 0,
         })?;
         Ok(response)
     }
@@ -207,8 +215,7 @@ impl SGClientProxy {
             .iter()
             .filter_map(|arg| {
                 let arg = parse_as_transaction_argument(arg).ok().unwrap();
-                let data = lcs::to_bytes(&arg).expect("Failed to serialize.");
-                Some(data)
+                Some(arg)
             })
             .collect();
 
@@ -340,6 +347,124 @@ impl SGClientProxy {
         let address_list = wallet.get_addresses()?;
         self.wallet = wallet;
         Ok(address_list)
+    }
+
+    /// latest height
+    pub fn latest_height(&self) -> Result<u64> {
+        let req = BlockRequestItem::LatestBlockHeightRequestItem;
+        let resp = self.chain_client.block_explorer(req.into())?;
+        let response = BlockResponseItem::try_from(resp)?;
+        match response {
+            BlockResponseItem::LatestBlockHeightResponseItem { height } => return Ok(height),
+            _ => return Err(format_err!("err BlockResponseItem type.")),
+        }
+    }
+
+    /// latest height
+    pub fn block_difficulty(&self, _params: &[&str]) -> Result<u64> {
+        let req = BlockRequestItem::DifficultHashRateRequestItem;
+        let resp = self.chain_client.block_explorer(req.into())?;
+        let response = BlockResponseItem::try_from(resp)?;
+        match response {
+            BlockResponseItem::DifficultHashRateResponseItem(d) => return Ok(d.difficulty),
+            _ => return Err(format_err!("err BlockResponseItem type.")),
+        }
+    }
+
+    pub fn block_detail(&self, params: &[&str]) -> Result<GetBlockByBlockIdResponse> {
+        ensure!(
+            params.len() == 2,
+            "Invalid number of arguments for querying block info."
+        );
+
+        let hash = HashValue::try_from(params[1].to_string())?;
+        let block_id = BlockId { id: hash };
+        let req = BlockRequestItem::BlockIdItem { block_id };
+        let resp = self.chain_client.block_explorer(req.into())?;
+        let response = BlockResponseItem::try_from(resp)?;
+        match response {
+            BlockResponseItem::GetBlockByBlockIdResponseItem(resp) => return Ok(resp),
+            _ => return Err(format_err!("err BlockResponseItem type.")),
+        }
+    }
+
+    ///
+    pub fn get_block_summary_list_request(
+        &self,
+        block_id: Option<&str>,
+    ) -> Result<GetBlockSummaryListResponse> {
+        let id = match block_id {
+            Some(s) => {
+                let hash = HashValue::try_from(s.to_string())?;
+                Some(BlockId { id: hash })
+            }
+            None => None,
+        };
+
+        let req = BlockRequestItem::GetBlockSummaryListRequestItem {
+            request: GetBlockSummaryListRequest { block_id: id },
+        };
+        let resp = self.chain_client.block_explorer(req.into())?;
+        let response = BlockResponseItem::try_from(resp)?;
+
+        match response {
+            BlockResponseItem::GetBlockSummaryListResponseItem { resp } => return Ok(resp),
+            _ => return Err(format_err!("err BlockResponseItem type.")),
+        }
+    }
+
+    /// latest version
+    pub fn latest_version(&self) -> Result<u64> {
+        let req = TxnRequestItem::LatestVersionRequestItem;
+        let resp = self.chain_client.txn_explorer(req.into())?;
+        let response = TxnResponseItem::try_from(resp)?;
+        match response {
+            TxnResponseItem::LatestVersionResponseItem(r) => match r.version {
+                Some(ver) => return Ok(ver.ver),
+                _ => return Err(format_err!("version is none.")),
+            },
+            _ => return Err(format_err!("err TxnResponseItem type.")),
+        }
+    }
+
+    pub fn txn_list(&self, params: &[&str]) -> Result<GetTransactionListResponse> {
+        let version = if params.len() >= 2 {
+            Some(TxnVersion {
+                ver: params[1].parse::<u64>()?,
+            })
+        } else {
+            None
+        };
+
+        let req = TxnRequestItem::GetTransactionListRequestItem {
+            request: GetTransactionListRequest { version },
+        };
+        let resp = self.chain_client.txn_explorer(req.into())?;
+        let response = TxnResponseItem::try_from(resp)?;
+
+        match response {
+            TxnResponseItem::GetTransactionListResponseItem(resp) => return Ok(resp),
+            _ => return Err(format_err!("err GetTransactionListResponse type.")),
+        }
+    }
+
+    pub fn txn_by_version(&self, params: &[&str]) -> Result<Transaction> {
+        ensure!(
+            params.len() == 2,
+            "Invalid number of arguments for querying transaction."
+        );
+        let version = params[1].parse::<u64>()?;
+        let req = TxnRequestItem::GetTransactionByVersionRequestItem { version };
+        let resp = self.chain_client.txn_explorer(req.into())?;
+        let response = TxnResponseItem::try_from(resp)?;
+
+        match response {
+            TxnResponseItem::GetTransactionByVersionResponseItem(resp) => match resp.txn {
+                Some(t) => return Ok(t),
+                _ => return Err(format_err!("txn is none.")),
+            },
+            _ => return Err(format_err!("err TxnResponseItem type.")),
+        }
     }
 }
 

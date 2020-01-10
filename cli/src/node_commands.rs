@@ -33,11 +33,11 @@ pub struct NodeCommandOpenChannel {}
 
 impl Command for NodeCommandOpenChannel {
     fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["open channel ", "oc"]
+        vec!["open_channel ", "oc"]
     }
 
     fn get_params_help(&self) -> &'static str {
-        "<remote_addr> <local_amount> <remote_amount>"
+        "<remote_addr> <local_amount>"
     }
 
     fn get_description(&self) -> &'static str {
@@ -45,7 +45,7 @@ impl Command for NodeCommandOpenChannel {
     }
 
     fn execute(&self, client: &mut SGClientProxy, params: &[&str]) {
-        if params.len() < 4 {
+        if params.len() < 3 {
             println!("Invalid number of arguments for open channel");
             return;
         }
@@ -130,7 +130,7 @@ impl Command for NodeCommandWithdrawChannel {
 
     fn execute(&self, client: &mut SGClientProxy, params: &[&str]) {
         if params.len() < 3 {
-            println!("Invalid number of arguments for withdrawl from channel");
+            println!("Invalid number of arguments for withdraw from channel");
             return;
         }
 
@@ -145,7 +145,7 @@ pub struct NodeCommandChannelBalance {}
 
 impl Command for NodeCommandChannelBalance {
     fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["channel balance ", "cb"]
+        vec!["channel_balance ", "cb"]
     }
 
     fn get_params_help(&self) -> &'static str {
@@ -173,7 +173,7 @@ pub struct NodeCommandQueryProposal {}
 
 impl Command for NodeCommandQueryProposal {
     fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["transaction proposal ", "tp"]
+        vec!["transaction_proposal ", "tp"]
     }
 
     fn get_params_help(&self) -> &'static str {
@@ -210,7 +210,7 @@ pub struct NodeCommandProposal {}
 
 impl Command for NodeCommandProposal {
     fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["transaction proposal action", "tpa"]
+        vec!["transaction_proposal_action", "tpa"]
     }
 
     fn get_params_help(&self) -> &'static str {
@@ -240,7 +240,7 @@ pub struct NodeCommandAddInvoice {}
 
 impl Command for NodeCommandAddInvoice {
     fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["add invoice", "ai"]
+        vec!["add_invoice", "ai"]
     }
 
     fn get_params_help(&self) -> &'static str {
@@ -270,7 +270,7 @@ pub struct NodeCommandSendPayment {}
 
 impl Command for NodeCommandSendPayment {
     fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["send payment", "sp"]
+        vec!["send_payment", "sp"]
     }
 
     fn get_params_help(&self) -> &'static str {

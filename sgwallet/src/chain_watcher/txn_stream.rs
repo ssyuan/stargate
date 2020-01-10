@@ -1,16 +1,32 @@
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 use crate::data_stream::{DataQuery, DataStream};
-use anyhow::Result;
+use anyhow::{format_err, Result};
 use async_trait::async_trait;
-use libra_types::get_with_proof::RequestItem;
-use libra_types::transaction::{Transaction, Version};
+use libra_types::{
+    access_path::DataPath,
+    account_config::association_address,
+    account_state_blob::AccountStateWithProof,
+    contract_event::ContractEvent,
+    get_with_proof::RequestItem,
+    libra_resource::LibraResource,
+    system_config::BlockMetaResource,
+    transaction::{Transaction, TransactionInfo, TransactionListWithProof, Version},
+};
 use sgchain::star_chain_client::ChainClient;
-use std::collections::BTreeMap;
-use std::convert::TryInto;
-use std::sync::Arc;
+use sgtypes::account_state::AccountState;
+use std::{collections::BTreeMap, convert::TryInto, sync::Arc};
 
-pub type TxnStream = DataStream<Transaction>;
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransactionWithInfo {
+    pub txn: Transaction,
+    pub txn_info: TransactionInfo,
+    pub version: u64,
+    pub events: Vec<ContractEvent>,
+    pub block_height: u64,
+}
+
+pub(super) type TxnStream = DataStream<TxnQuerier, TransactionWithInfo>;
 
 impl TxnStream {
     pub fn new_from_chain_client(
@@ -18,7 +34,7 @@ impl TxnStream {
         start_version: u64,
         limit: u64,
     ) -> Self {
-        DataStream::new(Box::new(TxnQuerier(chain_client)), start_version, limit)
+        DataStream::new(TxnQuerier(chain_client), start_version, limit)
     }
 }
 
@@ -30,16 +46,52 @@ pub(crate) fn build_request(
         .into()
 }
 
-struct TxnQuerier(Arc<dyn ChainClient>);
+pub(super) struct TxnQuerier(Arc<dyn ChainClient>);
+
+impl TxnQuerier {
+    async fn get_block_hight(&self, start_version: u64) -> Result<u64> {
+        let ri = RequestItem::GetAccountState {
+            address: association_address(),
+        };
+
+        let resp: libra_types::get_with_proof::ResponseItem = self
+            .0
+            .update_to_latest_ledger_async(&build_request(ri, Some(start_version)))
+            .await?
+            .response_items
+            .remove(0)
+            .try_into()?;
+
+        let AccountStateWithProof {
+            blob,
+            version,
+            proof,
+        } = resp.into_get_account_state_response()?;
+
+        let blob = blob.ok_or(format_err!("association account not exists!"))?;
+        let resp = AccountState::from_account_state_blob(
+            version,
+            blob.into(),
+            proof.transaction_info_to_account_proof().clone(),
+        )?;
+        let block_meta = resp
+            .get_resource::<BlockMetaResource>(&DataPath::onchain_resource_path(
+                BlockMetaResource::struct_tag(),
+            ))?
+            .ok_or(format_err!("block meta resource should exists"))?;
+        Ok(block_meta.height)
+    }
+}
+
 #[async_trait]
 impl DataQuery for TxnQuerier {
-    type Item = Transaction;
+    type Item = TransactionWithInfo;
 
     async fn query(&self, version: u64, limit: u64) -> Result<BTreeMap<u64, Self::Item>> {
         let ri = RequestItem::GetTransactions {
             start_version: version,
             limit,
-            fetch_events: false,
+            fetch_events: true,
         };
         let client = self.0.clone();
 
@@ -51,13 +103,36 @@ impl DataQuery for TxnQuerier {
             resp.response_items.remove(0).try_into()?;
         let txns = resp.into_get_transactions_response()?;
         // FIXME: check proof
-        match txns.first_transaction_version.as_ref() {
+        let TransactionListWithProof {
+            transactions,
+            events,
+            first_transaction_version,
+            proof,
+        } = txns;
+        match first_transaction_version.as_ref() {
             None => Ok(BTreeMap::new()),
             Some(first_version) => {
                 let mut c = BTreeMap::default();
+                for (pos, ((t, info), events)) in transactions
+                    .into_iter()
+                    .zip(proof.transaction_infos().to_vec().into_iter())
+                    .zip(events.unwrap())
+                    .enumerate()
+                {
+                    let version = *first_version + (pos as u64);
 
-                for (pos, t) in txns.transactions.into_iter().enumerate() {
-                    c.insert(*first_version + (pos as u64), t);
+                    // TODO: a better way to do it.
+                    let block_height = self.get_block_hight(version).await?;
+                    c.insert(
+                        version,
+                        TransactionWithInfo {
+                            txn: t,
+                            txn_info: info,
+                            version,
+                            events,
+                            block_height,
+                        },
+                    );
                 }
                 Ok(c)
             }

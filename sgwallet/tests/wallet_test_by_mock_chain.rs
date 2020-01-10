@@ -1,17 +1,18 @@
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::wallet_test_helper::{
+use anyhow::Result;
+use libra_logger::prelude::*;
+use libra_types::transaction::TransactionArgument;
+use mock_chain_test_helper::run_with_mock_client;
+use sgtypes::script_package::ChannelScriptPackage;
+use wallet_test_helper::{
     deploy_custom_module_and_script, test_deploy_custom_module, test_wallet_async,
 };
-use anyhow::Result;
-use libra_types::transaction::TransactionArgument;
-use sgchain::star_chain_client::{ChainClient, MockChainClient};
-use sgtypes::script_package::ChannelScriptPackage;
-use std::sync::Arc;
-use std::time::Duration;
+
 mod common;
-pub mod wallet_test_helper;
+mod mock_chain_test_helper;
+mod wallet_test_helper;
 
 #[test]
 fn test_wallet_with_mock_client() {
@@ -20,7 +21,7 @@ fn test_wallet_with_mock_client() {
             rt.block_on(test_wallet_async(sender, receiver))
         })
     }) {
-        println!("err: {:?}", e);
+        error!("err: {:#?}", e);
         assert!(false)
     }
 }
@@ -88,94 +89,137 @@ fn run_test_gobang() -> Result<()> {
     run_with_mock_client(|chain_client| {
         common::with_wallet(chain_client, |rt, alice, bob| {
             rt.block_on(async move {
-                deploy_custom_module_and_script(alice.clone(), bob.clone(), "test_gobang").await
+                deploy_custom_module_and_script(alice.clone(), bob.clone(), "test_gobang").await?;
+                common::open_channel(alice.clone(), bob.clone(), 100, 100).await?;
+
+                common::execute_script(
+                    alice.clone(),
+                    bob.clone(),
+                    "scripts",
+                    "new",
+                    vec![TransactionArgument::Address(bob.account())],
+                )
+                .await?;
+                common::execute_script(bob.clone(), alice.clone(), "scripts", "join", vec![])
+                    .await?;
+                common::execute_script(
+                    alice.clone(),
+                    bob.clone(),
+                    "scripts",
+                    "play",
+                    vec![
+                        TransactionArgument::Address(bob.account()),
+                        TransactionArgument::U64(2),
+                        TransactionArgument::U64(2),
+                    ],
+                )
+                .await?;
+                common::execute_script(
+                    bob.clone(),
+                    alice.clone(),
+                    "scripts",
+                    "play",
+                    vec![
+                        TransactionArgument::Address(alice.account()),
+                        TransactionArgument::U64(3),
+                        TransactionArgument::U64(2),
+                    ],
+                )
+                .await?;
+                common::execute_script(
+                    alice.clone(),
+                    bob.clone(),
+                    "scripts",
+                    "play",
+                    vec![
+                        TransactionArgument::Address(bob.account()),
+                        TransactionArgument::U64(2),
+                        TransactionArgument::U64(3),
+                    ],
+                )
+                .await?;
+                common::execute_script(
+                    bob.clone(),
+                    alice.clone(),
+                    "scripts",
+                    "play",
+                    vec![
+                        TransactionArgument::Address(alice.account()),
+                        TransactionArgument::U64(3),
+                        TransactionArgument::U64(3),
+                    ],
+                )
+                .await?;
+                common::execute_script(
+                    alice.clone(),
+                    bob.clone(),
+                    "scripts",
+                    "play",
+                    vec![
+                        TransactionArgument::Address(bob.account()),
+                        TransactionArgument::U64(2),
+                        TransactionArgument::U64(4),
+                    ],
+                )
+                .await?;
+                common::execute_script(
+                    bob.clone(),
+                    alice.clone(),
+                    "scripts",
+                    "play",
+                    vec![
+                        TransactionArgument::Address(alice.account()),
+                        TransactionArgument::U64(3),
+                        TransactionArgument::U64(4),
+                    ],
+                )
+                .await?;
+                common::execute_script(
+                    alice.clone(),
+                    bob.clone(),
+                    "scripts",
+                    "play",
+                    vec![
+                        TransactionArgument::Address(bob.account()),
+                        TransactionArgument::U64(2),
+                        TransactionArgument::U64(5),
+                    ],
+                )
+                .await?;
+                common::execute_script(
+                    bob.clone(),
+                    alice.clone(),
+                    "scripts",
+                    "play",
+                    vec![
+                        TransactionArgument::Address(alice.account()),
+                        TransactionArgument::U64(3),
+                        TransactionArgument::U64(5),
+                    ],
+                )
+                .await?;
+                common::execute_script(
+                    alice.clone(),
+                    bob.clone(),
+                    "scripts",
+                    "play",
+                    vec![
+                        TransactionArgument::Address(bob.account()),
+                        TransactionArgument::U64(2),
+                        TransactionArgument::U64(6),
+                    ],
+                )
+                .await?;
+                common::execute_script(
+                    alice.clone(),
+                    bob.clone(),
+                    "scripts",
+                    "check_score",
+                    vec![TransactionArgument::U64(1)],
+                )
+                .await?;
+                Ok(())
             })
         })
     })
-
-    //    open_channel(alice.clone(), bob.clone(), 100, 100)?;
-
-    //    execute_script(alice.clone(), bob.clone(), "scripts", "new", vec![TransactionArgument::Address(bob.account())])?;
-    //    execute_script(bob.clone(), alice.clone(), "scripts", "join", vec![])?;
-    //    execute_script(
-    //        alice.clone(),
-    //        bob.clone(),
-    //        "scripts",
-    //        "play",
-    //        vec![TransactionArgument::U64(2), TransactionArgument::U64(2), TransactionArgument::Address(bob.account())],
-    //    )?;
-    //    execute_script(
-    //        bob.clone(),
-    //        alice.clone(),
-    //        "scripts",
-    //        "play",
-    //        vec![TransactionArgument::U64(3), TransactionArgument::U64(2), TransactionArgument::Address(alice.account())],
-    //    )?;
-    //    execute_script(
-    //        alice.clone(),
-    //        bob.clone(),
-    //        "scripts",
-    //        "play",
-    //        vec![TransactionArgument::U64(2), TransactionArgument::U64(3), TransactionArgument::Address(bob.account())],
-    //    )?;
-    //    execute_script(
-    //        bob.clone(),
-    //        alice.clone(),
-    //        "scripts",
-    //        "play",
-    //        vec![TransactionArgument::U64(3), TransactionArgument::U64(3), TransactionArgument::Address(alice.account())],
-    //    )?;
-    //    execute_script(
-    //        alice.clone(),
-    //        bob.clone(),
-    //        "scripts",
-    //        "play",
-    //        vec![TransactionArgument::U64(2), TransactionArgument::U64(4), TransactionArgument::Address(bob.account())],
-    //    )?;
-    //    execute_script(
-    //        bob.clone(),
-    //        alice.clone(),
-    //        "scripts",
-    //        "play",
-    //        vec![TransactionArgument::U64(3), TransactionArgument::U64(4), TransactionArgument::Address(alice.account())],
-    //    )?;
-    //    execute_script(
-    //        alice.clone(),
-    //        bob.clone(),
-    //        "scripts",
-    //        "play",
-    //        vec![TransactionArgument::U64(2), TransactionArgument::U64(5), TransactionArgument::Address(bob.account())],
-    //    )?;
-    //    execute_script(
-    //        bob.clone(),
-    //        alice.clone(),
-    //        "scripts",
-    //        "play",
-    //        vec![TransactionArgument::U64(3), TransactionArgument::U64(5), TransactionArgument::Address(alice.account())],
-    //    )?;
-    //    execute_script(
-    //        alice.clone(),
-    //        bob.clone(),
-    //        "scripts",
-    //        "play",
-    //        vec![TransactionArgument::U64(2), TransactionArgument::U64(6), TransactionArgument::Address(bob.account())],
-    //    )?;
-    //    execute_script(
-    //        alice.clone(),
-    //        bob.clone(),
-    //        "scripts",
-    //        "check_score",
-    //        vec![TransactionArgument::U64(1)],
-    //    )?;
-}
-
-fn run_with_mock_client<F, T>(mut f: F) -> T
-where
-    F: FnMut(Arc<dyn ChainClient>) -> T,
-{
-    libra_logger::try_init_for_testing();
-    let (mock_chain_service, _handle) = MockChainClient::new();
-    std::thread::sleep(Duration::from_millis(1500));
-    let chain_client = Arc::new(mock_chain_service);
-    f(chain_client)
 }

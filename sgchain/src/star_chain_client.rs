@@ -21,14 +21,17 @@ use libra_types::contract_event::EventWithProof;
 use libra_types::crypto_proxies::LedgerInfoWithSignatures;
 use libra_types::get_with_proof::ResponseItem;
 use libra_types::ledger_info::LedgerInfo;
-use libra_types::transaction::Transaction;
+use libra_types::transaction::{Transaction, TransactionListWithProof};
 use libra_types::{
     account_address::AccountAddress,
     account_config::{association_address, AccountResource},
     account_state_blob::{AccountStateBlob, AccountStateWithProof},
     get_with_proof::RequestItem,
     proof::SparseMerkleProof,
-    proto::types::{UpdateToLatestLedgerRequest, UpdateToLatestLedgerResponse},
+    proto::types::{
+        BlockRequestItem, BlockResponseItem, TxnRequestItem, TxnResponseItem,
+        UpdateToLatestLedgerRequest, UpdateToLatestLedgerResponse,
+    },
     transaction::{RawTransaction, SignedTransaction, TransactionWithProof, Version},
 };
 use sgtypes::account_state::AccountState;
@@ -45,6 +48,13 @@ use vm_genesis::{
 };
 
 #[async_trait]
+pub trait ChainExplorer: Send + Sync {
+    fn block_explorer(&self, req: BlockRequestItem) -> ::grpcio::Result<BlockResponseItem>;
+
+    fn txn_explorer(&self, req: TxnRequestItem) -> ::grpcio::Result<TxnResponseItem>;
+}
+
+#[async_trait]
 pub trait ChainClient: Send + Sync {
     fn submit_transaction(
         &self,
@@ -52,6 +62,11 @@ pub trait ChainClient: Send + Sync {
     ) -> ::grpcio::Result<SubmitTransactionResponse>;
 
     fn update_to_latest_ledger(
+        &self,
+        req: &UpdateToLatestLedgerRequest,
+    ) -> ::grpcio::Result<UpdateToLatestLedgerResponse>;
+
+    async fn update_to_latest_ledger_async(
         &self,
         req: &UpdateToLatestLedgerRequest,
     ) -> ::grpcio::Result<UpdateToLatestLedgerResponse>;
@@ -263,6 +278,39 @@ pub trait ChainClient: Send + Sync {
         let resp = parse_response(self.do_request(&build_request(req, None)));
         resp.into_get_events_by_access_path_response()
     }
+
+    fn get_transaction(
+        &self,
+        start_version: Version,
+        limit: u64,
+        fetch_events: bool,
+    ) -> Result<TransactionListWithProof> {
+        let req = RequestItem::GetTransactions {
+            start_version,
+            limit,
+            fetch_events,
+        };
+        let resp = parse_response(self.update_to_latest_ledger(&build_request(req, None))?);
+        resp.into_get_transactions_response()
+    }
+
+    async fn get_transaction_async(
+        &self,
+        start_version: Version,
+        limit: u64,
+        fetch_events: bool,
+    ) -> Result<TransactionListWithProof> {
+        let req = RequestItem::GetTransactions {
+            start_version,
+            limit,
+            fetch_events,
+        };
+        let resp = parse_response(
+            self.update_to_latest_ledger_async(&build_request(req, None))
+                .await?,
+        );
+        resp.into_get_transactions_response()
+    }
 }
 
 #[derive(Clone)]
@@ -282,6 +330,17 @@ impl StarChainClient {
     }
 }
 
+impl ChainExplorer for StarChainClient {
+    fn block_explorer(&self, req: BlockRequestItem) -> ::grpcio::Result<BlockResponseItem> {
+        self.ac_client.block_explorer(&req)
+    }
+
+    fn txn_explorer(&self, req: TxnRequestItem) -> ::grpcio::Result<TxnResponseItem> {
+        self.ac_client.txn_explorer(&req)
+    }
+}
+
+#[async_trait]
 impl ChainClient for StarChainClient {
     fn submit_transaction(
         &self,
@@ -295,6 +354,13 @@ impl ChainClient for StarChainClient {
         req: &UpdateToLatestLedgerRequest,
     ) -> ::grpcio::Result<UpdateToLatestLedgerResponse> {
         self.ac_client.update_to_latest_ledger(req)
+    }
+    async fn update_to_latest_ledger_async(
+        &self,
+        req: &UpdateToLatestLedgerRequest,
+    ) -> ::grpcio::Result<UpdateToLatestLedgerResponse> {
+        // FIXME: use async-call of grpc
+        tokio::task::block_in_place(|| self.ac_client.update_to_latest_ledger(req))
     }
 }
 
@@ -330,6 +396,7 @@ impl MockChainClient {
     }
 }
 
+#[async_trait]
 impl ChainClient for MockChainClient {
     fn submit_transaction(
         &self,
@@ -343,6 +410,12 @@ impl ChainClient for MockChainClient {
         req: &UpdateToLatestLedgerRequest,
     ) -> ::grpcio::Result<UpdateToLatestLedgerResponse> {
         self.ac_client.update_to_latest_ledger(req)
+    }
+    async fn update_to_latest_ledger_async(
+        &self,
+        req: &UpdateToLatestLedgerRequest,
+    ) -> ::grpcio::Result<UpdateToLatestLedgerResponse> {
+        self.update_to_latest_ledger(req)
     }
 }
 

@@ -3,17 +3,15 @@
 
 use anyhow::Result;
 use libra_state_view::StateView;
-use libra_types::write_set::WriteSet;
-use libra_types::{access_path::AccessPath, transaction::Version};
-use sgchain::client_state_view::ClientStateView;
-use sgchain::star_chain_client::ChainClient;
+use libra_types::{access_path::AccessPath, transaction::Version, write_set::WriteSet};
+use sgchain::{client_state_view::ClientStateView, star_chain_client::ChainClient};
 
 use libra_types::account_address::AccountAddress;
 use sgtypes::channel::ChannelState;
 
 pub struct ChannelStateView<'txn> {
     channel_state: &'txn ChannelState,
-    latest_write_set: WriteSet,
+    latest_write_set: &'txn WriteSet,
     client_state_view: ClientStateView<'txn>,
 }
 
@@ -21,7 +19,7 @@ impl<'txn> ChannelStateView<'txn> {
     pub fn new(
         account_address: AccountAddress,
         channel_state: &'txn ChannelState,
-        latest_write_set: WriteSet,
+        latest_write_set: &'txn WriteSet,
         version: Option<Version>,
         client: &'txn dyn ChainClient,
     ) -> Result<Self> {
@@ -48,7 +46,9 @@ impl<'txn> ChannelStateView<'txn> {
     }
 
     pub fn get_local(&self, access_path: &AccessPath) -> Result<Option<Vec<u8>>> {
-        super::channel::access_local(&self.latest_write_set, self.channel_state, access_path)
+        let d =
+            super::channel::access_local(self.latest_write_set, self.channel_state, access_path)?;
+        Ok(d.map(|t| t.to_vec()))
     }
 }
 

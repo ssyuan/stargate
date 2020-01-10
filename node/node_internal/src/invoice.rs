@@ -1,19 +1,21 @@
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::get_unix_ts;
 use anyhow::{Error, Result};
 use futures::lock::Mutex;
 use hex;
 use libra_crypto::HashValue;
 use libra_logger::prelude::*;
 use libra_types::account_address::{AccountAddress, ADDRESS_LENGTH};
+use rand::prelude::*;
 use std::collections::HashMap;
 use std::convert::{From, TryFrom};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct InvoiceManager {
-    r_hash_map: Arc<Mutex<HashMap<Vec<u8>, (Vec<u8>)>>>,
+    r_hash_map: Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>,
     r_hash_previous_hop_map: Arc<Mutex<HashMap<Vec<u8>, AccountAddress>>>,
 }
 
@@ -81,7 +83,8 @@ impl InvoiceManager {
     }
 
     pub async fn new_invoice(&self, amount: u64, receiver: AccountAddress) -> Invoice {
-        let preimage = HashValue::random().to_vec();
+        let mut rng: StdRng = SeedableRng::seed_from_u64(get_unix_ts());
+        let preimage = HashValue::random_with_rng(&mut rng).to_vec();
         let r_hash = HashValue::from_sha3_256(preimage.as_slice()).to_vec();
 
         info!(

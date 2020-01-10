@@ -1,23 +1,23 @@
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
+#![allow(dead_code)]
 
 use super::common;
 use anyhow::{bail, Result};
 use futures::TryStreamExt;
 use libra_logger::prelude::*;
-use libra_types::access_path::AccessPath;
-use libra_types::account_address::AccountAddress;
-use libra_types::channel::ChannelEvent;
+use libra_types::{
+    access_path::AccessPath, account_address::AccountAddress, channel::ChannelEvent,
+};
 use sgchain::{client_state_view::ClientStateView, star_chain_client::ChainClient};
 use sgcompiler::{Compiler, StateViewModuleLoader};
 use sgtypes::script_package::ChannelScriptPackage;
-use sgwallet::wallet::Wallet;
-use sgwallet::{get_channel_events, ChannelChangeEvent};
-use std::time::Duration;
+use sgwallet::{get_channel_events, wallet::WalletHandle, ChannelChangeEvent};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
     thread::sleep,
+    time::Duration,
 };
 
 //fn faucet_sync(client: Arc<dyn ChainClient>, receiver: AccountAddress, amount: u64) -> Result<()> {
@@ -27,8 +27,8 @@ use std::{
 //}
 
 pub async fn test_channel_event_watcher_async(
-    sender_wallet: Arc<Wallet>,
-    receiver_wallet: Arc<Wallet>,
+    sender_wallet: Arc<WalletHandle>,
+    receiver_wallet: Arc<WalletHandle>,
 ) -> Result<()> {
     let sender_fund_amount = 10000;
     let receiver_fund_amount = 10000;
@@ -86,8 +86,8 @@ pub async fn test_channel_event_watcher_async(
 }
 
 pub async fn test_wallet_async(
-    sender_wallet: Arc<Wallet>,
-    receiver_wallet: Arc<Wallet>,
+    sender_wallet: Arc<WalletHandle>,
+    receiver_wallet: Arc<WalletHandle>,
 ) -> Result<()> {
     let sender_fund_amount: u64 = 0;
     let receiver_fund_amount: u64 = 0;
@@ -176,6 +176,11 @@ pub async fn test_wallet_async(
     )
     .await?;
 
+    let channel_seq_number = sender_wallet.channel_sequence_number(receiver).await?;
+    let txn = sender_wallet
+        .get_applied_txn_by_channel_sequence_number(receiver, channel_seq_number - 1)?;
+    assert_eq!(sender, txn.proposer());
+
     let sender_channel_balance = sender_wallet.channel_balance(receiver).await?;
     assert_eq!(
         sender_channel_balance,
@@ -215,8 +220,8 @@ fn get_test_case_path(case_name: &str) -> PathBuf {
 }
 
 pub async fn deploy_custom_module_and_script(
-    wallet1: Arc<Wallet>,
-    wallet2: Arc<Wallet>,
+    wallet1: Arc<WalletHandle>,
+    wallet2: Arc<WalletHandle>,
     test_case: &str,
 ) -> Result<()> {
     compile_and_deploy_module(wallet1.clone(), test_case).await?;
@@ -228,7 +233,7 @@ pub async fn deploy_custom_module_and_script(
     Ok(())
 }
 
-async fn compile_and_deploy_module(wallet: Arc<Wallet>, test_case: &str) -> Result<()> {
+async fn compile_and_deploy_module(wallet: Arc<WalletHandle>, test_case: &str) -> Result<()> {
     let path = get_test_case_path(test_case);
     let module_source = std::fs::read_to_string(path.join("module.mvir"))?;
 
@@ -241,7 +246,7 @@ async fn compile_and_deploy_module(wallet: Arc<Wallet>, test_case: &str) -> Resu
     Ok(())
 }
 
-fn compile_package(wallet: Arc<Wallet>, test_case: &str) -> Result<ChannelScriptPackage> {
+fn compile_package(wallet: Arc<WalletHandle>, test_case: &str) -> Result<ChannelScriptPackage> {
     let path = get_test_case_path(test_case);
 
     let client_state_view = ClientStateView::new(None, wallet.client());

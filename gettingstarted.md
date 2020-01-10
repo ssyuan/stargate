@@ -12,6 +12,8 @@ cargo build
 ```
 ./target/debug/sgchain 
 ```
+## Run starcoin test net [Option]
+if you want start chain node to connect startcoin test net , [click here](./sgterraform/quickstart.md).
 
 ## Run Cli and Create Account
 
@@ -25,6 +27,11 @@ Then transfer some testing coin from coinbase to these new accounts
 ```
 ./target/debug/cli --chain_host localhost --chain_port 8000 --host localhost --port 9000 -m alice/key
 ```
+connect to starcoin test-net
+```
+./target/debug/cli --chain_host 39.98.196.244 --chain_port 8001 --host starcoin.io
+```
+
 Then the mint coin for alice.
 ```
 a m 10000000
@@ -53,8 +60,8 @@ account state
     
 2. Start node service
     ```
-    ./target/debug/node -c alice -f alice/key
-    ./target/debug/node -c bob -f bob/key
+    ./target/debug/node -c alice -f alice/key -n 0
+    ./target/debug/node -c bob -f bob/key -n 0
     ```
 
 ## Channel Operation
@@ -136,3 +143,6 @@ A game Rock-Paper-Scissors is used to demonstrate the channel contract.
    dev package execute {bob} scripts rps_end_game b"72" b"616263"
    ```
    After the game end,you could check channel balance.Alice lose the game,so balance of her should be origin balance minus 10,balance of bob should be his origin balance plus 10. A detailed description of the contract can be found [here](./demo/RockPaperScissors/README.md).
+
+## trouble shooting
+[click enter](./troubleshooting.md)

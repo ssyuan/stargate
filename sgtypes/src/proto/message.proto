@@ -1,5 +1,5 @@
 syntax = "proto3";
-
+option go_package = "starcoin/sgtypes";
 package sgtypes;
 
 import "channel_transaction.proto";
@@ -52,15 +52,7 @@ message BalanceQueryResponse{
     uint64 local_balance = 2;
     bytes remote_addr = 3;
     uint64 remote_balance = 4;
-}
-
-message VertexInfo {
-    bytes addr = 1;
-}
-
-message AntMessage {
-    bytes s_value = 1;
-    repeated VertexInfo vertex_list= 2;
+    uint64 total_pay_amount = 5;
 }
 
 message NextHop {
@@ -71,4 +63,35 @@ message NextHop {
 message MultiHopChannelRequest{
     ChannelTransactionRequest request = 1;
     repeated NextHop hops = 2;
+}
+
+message ExchangeSeedMessageRequest{
+    bytes sender_seed  = 1;
+}
+
+message ExchangeSeedMessageResponse{
+    bytes sender_seed  = 1;
+    bytes receiver_seed = 2;
+}
+
+message AntQueryMessage {
+    bytes s_value = 1;
+    bytes sender_addr = 2;
+    repeated BalanceQueryResponse balance_query_response_list= 3;
+}
+
+message AntFinalMessage {
+    bytes r_value = 1;
+    repeated BalanceQueryResponse balance_query_response_list= 2;
+}
+
+message RouterNetworkMessage {
+    oneof router_message_items {
+        ExchangeSeedMessageRequest exchange_seed_request = 1;
+        ExchangeSeedMessageResponse exchange_seed_response = 2;
+        AntQueryMessage ant_query_message = 3;
+        AntFinalMessage ant_final_message = 4;
+        BalanceQueryRequest balance_query_request = 5;
+        BalanceQueryResponse balance_query_response = 6;
+    }
 }
